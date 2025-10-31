@@ -1,0 +1,76 @@
+name: Nightly Evaluations
+
+on:
+  schedule:
+    # Run at 9:00 AM UTC (after ingestion)
+    - cron: '0 9 * * *'
+  workflow_dispatch: # Allow manual trigger
+  pull_request:
+    paths:
+      - 'src/lib/**'
+      - 'src/app/api/**'
+      - 'evals/**'
+
+jobs:
+  run-evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run evaluations
+        id: evals
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: npm run evals
+        continue-on-error: true
+
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/results.json
+
+      - name: Comment on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let comment = '❌ **Evaluation Failed**\n\n';
+            
+            try {
+              const results = JSON.parse(fs.readFileSync('evals/results.json', 'utf8'));
+              comment += '```json\n' + JSON.stringify(results, null, 2) + '\n```';
+            } catch (err) {
+              comment += 'Could not read eval results.';
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Fail if evals failed
+        if: steps.evals.outcome == 'failure'
+        run: exit 1
+
+      - name: Success message
+        if: success()
+        run: echo "✅ All evaluations passed!"
+
