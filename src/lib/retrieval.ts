@@ -24,7 +24,7 @@ export async function hybridSearch(
 
   // Create query embedding
   const queryEmbedding = await createEmbedding(query);
-  const embeddingString = `[${queryEmbedding.join(','}]`;
+  const embeddingString = `[${queryEmbedding.join(',')}]`;
 
   // Build query with optional text search filter
   let queryBuilder = db
